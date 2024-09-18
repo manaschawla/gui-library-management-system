@@ -28,7 +28,17 @@ def save_books():
 
 # Add a book
 def add_book():
-    pass
+    title, author, isbn = entry_title.get(), entry_author.get(), entry_isbn.get()
+    if title and author and isbn:
+        book_info = f"{title} by {author} (ISBN: {isbn}) - Available"
+        listbox_books.insert(tk.END, book_info)
+        entry_title.delete(0, tk.END)
+        entry_author.delete(0, tk.END)
+        entry_isbn.delete(0, tk.END)
+        save_books()
+        messagebox.showinfo("Success", "Book added!")
+    else:
+        messagebox.showwarning("Error", "All fields are required.")
 
 # Borrow or return a book
 def update_book_status(operation):
@@ -40,11 +50,33 @@ def remove_book():
 
 # Authorize a user
 def authenticate_user():
-    pass
+    global current_user
+    username, password = entry_username.get(), entry_password.get()
+    try:
+        with open(users_file, 'r') as file:
+            for line in file:
+                user, pwd = line.strip().split(',')
+                if user == username and pwd == password:
+                    current_user = username
+                    messagebox.showinfo("Login Successful", f"Welcome, {username}!")
+                    login_frame.pack_forget()
+                    main_frame.pack()
+                    load_books()
+                    return
+    except FileNotFoundError:
+        pass
+    messagebox.showwarning("Error", "Invalid username or password.")
 
 # Register a new user
 def register_user():
-    pass
+    username, password = entry_username.get(), entry_password.get()
+    if username and password:
+        with open(users_file, 'a') as file:
+            file.write(f"{username},{password}\n")
+        messagebox.showinfo("Success", "User registered!")
+    else:
+        messagebox.showwarning("Error", "Enter both username and password.")
+
 
 # Logout and return to login screen
 def logout():
