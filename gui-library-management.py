@@ -42,11 +42,52 @@ def add_book():
 
 # Borrow or return a book
 def update_book_status(operation):
-    pass
+    selected_index = listbox_books.curselection()
+    if selected_index:
+        book = listbox_books.get(selected_index)
+        if operation == "borrow" and "Available" in book:
+            borrow_date = datetime.now().strftime("%Y-%m-%d")
+            updated_book = book.replace("Available", f"Borrowed on {borrow_date}")
+            listbox_books.delete(selected_index)
+            listbox_books.insert(selected_index, updated_book)
+            save_books()
+            with open(history_file, 'a') as file:
+                file.write(f"Borrowed: {book} on {borrow_date}\n")
+            messagebox.showinfo("Success", "Book borrowed!")
+        elif operation == "return" and "Borrowed" in book:
+            borrow_date_str = book.split("on")[1].strip()
+            borrow_date = datetime.strptime(borrow_date_str, "%Y-%m-%d")
+            days_borrowed = (datetime.now() - borrow_date).days
+
+            if days_borrowed > 14:
+                messagebox.showwarning("Warning", f"Book borrowed for {days_borrowed} days. It exceeds the 14-day limit!")
+            updated_book = book.replace(f"Borrowed on {borrow_date_str}", "Available")
+            listbox_books.delete(selected_index)
+            listbox_books.insert(selected_index, updated_book)
+            save_books()
+            with open(history_file, 'a') as file:
+                file.write(f"Returned: {book} on {datetime.now().strftime('%Y-%m-%d')}\n")
+            messagebox.showinfo("Success", f"Book returned after {days_borrowed} days.")
+        else:
+            messagebox.showwarning("Error", "Cannot perform the requested action.")
+    else:
+        messagebox.showwarning("Error", "Select a book.")
+
+# Remove a book
 
 # Remove a book
 def remove_book():
-    pass
+    selected_index = listbox_books.curselection()
+    if selected_index:
+        book = listbox_books.get(selected_index)
+        confirm = messagebox.askyesno("Confirm", f"Are you sure you want to remove the book: {book}?")
+        if confirm:
+            listbox_books.delete(selected_index)
+            save_books()
+            messagebox.showinfo("Success", "Book removed.")
+    else:
+        messagebox.showwarning("Error", "Select a book to remove.")
+        
 
 # Authorize a user
 def authenticate_user():
@@ -80,7 +121,10 @@ def register_user():
 
 # Logout and return to login screen
 def logout():
-    pass
+    global current_user
+    current_user = None
+    main_frame.pack_forget()
+    login_frame.pack()
 
 
 # Initialize the main window
