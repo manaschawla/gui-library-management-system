@@ -1,33 +1,56 @@
 import tkinter as tk
 from tkinter import messagebox
-from datetime import datetime, timedelta
+from datetime import datetime
+import smtplib
+import os
+
+# Email needs
+EMAIL_ADDRESS = "your_email@gmail.com"
+EMAIL_PASSWORD = "your_password"
 
 # File paths
-books_file = "books.txt"
-users_file = "users.txt"
-history_file = "borrow_history.txt"
+BOOKS_FILE = "books.txt"
+USERS_FILE = "users.txt"
+HISTORY_FILE = "borrow_history.txt"
 
 # Global variable to store current user
 current_user = None
 
-# Load books from the file
+
+# Utility Functions
+def send_email(subject, body, recipient):
+    """Send an email notification."""
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            message = f"Subject: {subject}\n\n{body}"
+            server.sendmail(EMAIL_ADDRESS, recipient, message)
+            print("Email sent successfully")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+
 def load_books():
+    """Load books from the file and populate the listbox."""
     listbox_books.delete(0, tk.END)
     try:
-        with open(books_file, 'r') as file:
+        with open(BOOKS_FILE, "r") as file:
             for line in file:
                 listbox_books.insert(tk.END, line.strip())
     except FileNotFoundError:
-        open(books_file, 'w').close()  # Create file if it doesn't exist
+        open(BOOKS_FILE, "w").close()  # Create the file if it doesn't exist
 
-# Save books to the file
+
 def save_books():
-    with open(books_file, 'w') as file:
+    """Save books to the file."""
+    with open(BOOKS_FILE, "w") as file:
         for book in listbox_books.get(0, tk.END):
             file.write(book + "\n")
 
-# Add a book
+
 def add_book():
+    """Add a new book to the library."""
     title, author, isbn = entry_title.get(), entry_author.get(), entry_isbn.get()
     if title and author and isbn:
         book_info = f"{title} by {author} (ISBN: {isbn}) - Available"
@@ -40,137 +63,192 @@ def add_book():
     else:
         messagebox.showwarning("Error", "All fields are required.")
 
-# Borrow or return a book
-def update_book_status(operation):
-    selected_index = listbox_books.curselection()
-    if selected_index:
+
+def borrow_book_by_details():
+    """Borrow a book by providing details."""
+    title, author, isbn = entry_title.get(), entry_author.get(), entry_isbn.get()
+    if not (title and author and isbn):
+        messagebox.showwarning("Error", "Please provide the title, author, and ISBN to borrow a book.")
+        return
+
+    for index in range(listbox_books.size()):
+        book = listbox_books.get(index)
+        if f"{title} by {author} (ISBN: {isbn})" in book and "Available" in book:
+            borrow_date = datetime.now().strftime("%Y-%m-%d")
+            updated_book = book.replace("Available", f"Borrowed on {borrow_date}")
+            listbox_books.delete(index)
+            listbox_books.insert(index, updated_book)
+            save_books()
+            with open(HISTORY_FILE, "a") as file:
+                file.write(f"Borrowed: {book} on {borrow_date}\n")
+
+            send_email("Book Borrowed", f"You have borrowed: {book}", entry_user_email.get())
+            messagebox.showinfo("Success", "Book borrowed successfully!")
+            return
+
+    messagebox.showwarning("Error", "The book is either not available or doesn't exist.")
+
+
+def borrow_book_from_list():
+    """Borrow a selected book from the list."""
+    try:
+        selected_index = listbox_books.curselection()[0]
         book = listbox_books.get(selected_index)
-        if operation == "borrow" and "Available" in book:
+        if "Available" in book:
             borrow_date = datetime.now().strftime("%Y-%m-%d")
             updated_book = book.replace("Available", f"Borrowed on {borrow_date}")
             listbox_books.delete(selected_index)
             listbox_books.insert(selected_index, updated_book)
             save_books()
-            with open(history_file, 'a') as file:
+            with open(HISTORY_FILE, "a") as file:
                 file.write(f"Borrowed: {book} on {borrow_date}\n")
-            messagebox.showinfo("Success", "Book borrowed!")
-        elif operation == "return" and "Borrowed" in book:
-            borrow_date_str = book.split("on")[1].strip()
-            borrow_date = datetime.strptime(borrow_date_str, "%Y-%m-%d")
-            days_borrowed = (datetime.now() - borrow_date).days
 
-            if days_borrowed > 14:
-                messagebox.showwarning("Warning", f"Book borrowed for {days_borrowed} days. It exceeds the 14-day limit!")
-            updated_book = book.replace(f"Borrowed on {borrow_date_str}", "Available")
+            send_email("Book Borrowed", f"You have borrowed: {book}", entry_user_email.get())
+            messagebox.showinfo("Success", "Book borrowed successfully!")
+        else:
+            messagebox.showwarning("Error", "This book is not available for borrowing.")
+    except IndexError:
+        messagebox.showwarning("Error", "No book selected.")
+
+
+def return_book():
+    """Return a selected borrowed book."""
+    try:
+        selected_index = listbox_books.curselection()[0]
+        book = listbox_books.get(selected_index)
+        if "Borrowed on" in book:
+            updated_book = book.split(" - Borrowed on")[0] + " - Available"
             listbox_books.delete(selected_index)
             listbox_books.insert(selected_index, updated_book)
             save_books()
-            with open(history_file, 'a') as file:
-                file.write(f"Returned: {book} on {datetime.now().strftime('%Y-%m-%d')}\n")
-            messagebox.showinfo("Success", f"Book returned after {days_borrowed} days.")
+            with open(HISTORY_FILE, "a") as file:
+                file.write(f"Returned: {book}\n")
+
+            messagebox.showinfo("Success", "Book returned successfully!")
         else:
-            messagebox.showwarning("Error", "Cannot perform the requested action.")
+            messagebox.showwarning("Error", "This book is not currently borrowed.")
+    except IndexError:
+        messagebox.showwarning("Error", "No book selected.")
+
+
+def send_available_books():
+    """Email the list of available books."""
+    available_books = [book for book in listbox_books.get(0, tk.END) if "Available" in book]
+    if available_books:
+        books_list = "\n".join(available_books)
+        send_email("Available Books", f"Here is the list of available books:\n\n{books_list}", entry_user_email.get())
+        messagebox.showinfo("Success", "Available books emailed!")
     else:
-        messagebox.showwarning("Error", "Select a book.")
+        messagebox.showwarning("Error", "No available books.")
 
-# Remove a book
 
-# Remove a book
-def remove_book():
-    selected_index = listbox_books.curselection()
-    if selected_index:
-        book = listbox_books.get(selected_index)
-        confirm = messagebox.askyesno("Confirm", f"Are you sure you want to remove the book: {book}?")
-        if confirm:
-            listbox_books.delete(selected_index)
-            save_books()
-            messagebox.showinfo("Success", "Book removed.")
-    else:
-        messagebox.showwarning("Error", "Select a book to remove.")
-        
-
-# Authorize a user
-def authenticate_user():
-    global current_user
-    username, password = entry_username.get(), entry_password.get()
-    try:
-        with open(users_file, 'r') as file:
-            for line in file:
-                user, pwd = line.strip().split(',')
-                if user == username and pwd == password:
-                    current_user = username
-                    messagebox.showinfo("Login Successful", f"Welcome, {username}!")
-                    login_frame.pack_forget()
-                    main_frame.pack()
-                    load_books()
-                    return
-    except FileNotFoundError:
-        pass
-    messagebox.showwarning("Error", "Invalid username or password.")
-
-# Register a new user
-def register_user():
-    username, password = entry_username.get(), entry_password.get()
+# User Authentication Functions
+def register():
+    """Register a new user."""
+    username = entry_username.get()
+    password = entry_password.get()
     if username and password:
-        with open(users_file, 'a') as file:
+        with open(USERS_FILE, "a") as file:
             file.write(f"{username},{password}\n")
-        messagebox.showinfo("Success", "User registered!")
+        messagebox.showinfo("Success", "User registered successfully!")
     else:
-        messagebox.showwarning("Error", "Enter both username and password.")
+        messagebox.showwarning("Error", "All fields are required.")
 
 
-# Logout and return to login screen
+def login():
+    """Log in an existing user."""
+    global current_user
+    username = entry_username.get()
+    password = entry_password.get()
+    try:
+        with open(USERS_FILE, "r") as file:
+            users = file.readlines()
+            for user in users:
+                stored_username, stored_password = user.strip().split(",")
+                if username == stored_username and password == stored_password:
+                    current_user = username
+                    messagebox.showinfo("Success", "Logged in successfully!")
+                    show_library_ui()
+                    return
+        messagebox.showwarning("Error", "Invalid credentials.")
+    except FileNotFoundError:
+        open(USERS_FILE, "w").close()
+        messagebox.showwarning("Error", "No users registered yet.")
+
+
 def logout():
+    """Log out the current user."""
     global current_user
     current_user = None
-    main_frame.pack_forget()
-    login_frame.pack()
+    messagebox.showinfo("Success", "Logged out successfully!")
+    show_login_ui()
 
 
-# Initialize the main window
+# UI Functions
+def show_login_ui():
+    """Display the login page."""
+    for widget in root.winfo_children():
+        widget.destroy()
+
+    tk.Label(root, text="Login", font=("Arial", 18)).pack(pady=10)
+    tk.Label(root, text="Username").pack()
+    global entry_username
+    entry_username = tk.Entry(root)
+    entry_username.pack()
+
+    tk.Label(root, text="Password").pack()
+    global entry_password
+    entry_password = tk.Entry(root, show="*")
+    entry_password.pack()
+
+    tk.Button(root, text="Login", command=login).pack(pady=5)
+    tk.Button(root, text="Register", command=register).pack()
+
+
+def show_library_ui():
+    """Display the library management page."""
+    for widget in root.winfo_children():
+        widget.destroy()
+
+    tk.Label(root, text=f"Welcome, {current_user}!", font=("Arial", 14)).pack(pady=10)
+    tk.Button(root, text="Logout", command=logout).pack(pady=5)
+
+    global listbox_books
+    listbox_books = tk.Listbox(root, width=80)
+    listbox_books.pack()
+
+    tk.Label(root, text="Title:").pack()
+    global entry_title
+    entry_title = tk.Entry(root)
+    entry_title.pack()
+
+    tk.Label(root, text="Author:").pack()
+    global entry_author
+    entry_author = tk.Entry(root)
+    entry_author.pack()
+
+    tk.Label(root, text="ISBN:").pack()
+    global entry_isbn
+    entry_isbn = tk.Entry(root)
+    entry_isbn.pack()
+
+    tk.Label(root, text="User Email:").pack()
+    global entry_user_email
+    entry_user_email = tk.Entry(root)
+    entry_user_email.pack()
+
+    tk.Button(root, text="Add Book", command=add_book).pack()
+    tk.Button(root, text="Borrow by Book Details", command=borrow_book_by_details).pack()
+    tk.Button(root, text="Borrow from List", command=borrow_book_from_list).pack()
+    tk.Button(root, text="Return Book", command=return_book).pack()
+    tk.Button(root, text="Email Available Books", command=send_available_books).pack()
+
+    load_books()
+
+
+# Main Application
 root = tk.Tk()
 root.title("Library Management System")
-root.geometry("500x600")
-
-# Login Frame
-login_frame = tk.Frame(root)
-login_frame.pack()
-
-tk.Label(login_frame, text="Username:").pack()
-entry_username = tk.Entry(login_frame)
-entry_username.pack()
-
-tk.Label(login_frame, text="Password:").pack()
-entry_password = tk.Entry(login_frame, show="*")
-entry_password.pack()
-
-tk.Button(login_frame, text="Login", command=authenticate_user).pack()
-tk.Button(login_frame, text="Register", command=register_user).pack()
-
-# Main Frame
-main_frame = tk.Frame(root)
-
-tk.Label(main_frame, text="Title:").pack()
-entry_title = tk.Entry(main_frame)
-entry_title.pack()
-
-tk.Label(main_frame, text="Author:").pack()
-entry_author = tk.Entry(main_frame)
-entry_author.pack()
-
-tk.Label(main_frame, text="ISBN:").pack()
-entry_isbn = tk.Entry(main_frame)
-entry_isbn.pack()
-
-tk.Button(main_frame, text="Add Book", command=add_book).pack()
-tk.Button(main_frame, text="Borrow Book", command=lambda: update_book_status("borrow")).pack()
-tk.Button(main_frame, text="Return Book", command=lambda: update_book_status("return")).pack()
-tk.Button(main_frame, text="Remove Book", command=remove_book).pack()
-
-listbox_books = tk.Listbox(main_frame, width=80)
-listbox_books.pack()
-
-tk.Button(main_frame, text="Log Out", command=logout).pack()
-
-# Start with login frame visible
+root.geometry("600x600")
+show_login_ui()
 root.mainloop()
